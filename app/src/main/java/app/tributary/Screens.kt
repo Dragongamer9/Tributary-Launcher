@@ -15,7 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,7 +87,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class Overlay { None, Search, Settings }
+enum class Overlay { None, Drawer, Search, Settings }
 
 fun Context.launchApp(a: AppEntry) {
     try {
@@ -98,7 +98,7 @@ fun Context.launchApp(a: AppEntry) {
     } catch (_: Exception) {}
 }
 
-private fun Context.open(i: Intent) {
+internal fun Context.open(i: Intent) {
     try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
 }
 
@@ -111,14 +111,30 @@ fun FlowRoot(vm: FlowViewModel) {
     LaunchedEffect(homeTick) { overlay = Overlay.None }
     BackHandler(enabled = overlay != Overlay.None) { overlay = Overlay.None }
 
-    Box(Modifier.fillMaxSize().background(theme.bg)) {
+    val left by vm.leftHanded.collectAsState()
+
+    Box(
+        Modifier.fillMaxSize().background(theme.bg).pointerInput(overlay) {
+            var total = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { total = 0f },
+                onDragEnd = { if (total < -120f && overlay == Overlay.None) overlay = Overlay.Drawer }
+            ) { _, d -> total += d }
+        }
+    ) {
         HomeFeed(vm, theme) { overlay = Overlay.Settings }
-        Dock(vm, theme, { overlay = Overlay.Search }, Modifier.align(Alignment.BottomCenter))
-        AnimatedVisibility(overlay == Overlay.Search, enter = fadeIn(), exit = fadeOut()) {
-            SearchScreen(vm, theme) { overlay = Overlay.None }
+        AnimatedVisibility(overlay == Overlay.Drawer || overlay == Overlay.Search, enter = fadeIn(), exit = fadeOut()) {
+            DrawerScreen(vm, theme, autoFocus = overlay == Overlay.Search) { overlay = Overlay.None }
         }
         AnimatedVisibility(overlay == Overlay.Settings, enter = fadeIn(), exit = fadeOut()) {
             SettingsScreen(vm, theme) { overlay = Overlay.None }
+        }
+        if (overlay != Overlay.Settings) {
+            CornerTray(
+                vm, theme, searchMode = overlay == Overlay.Drawer || overlay == Overlay.Search,
+                onSearch = { overlay = Overlay.Search },
+                modifier = Modifier.align(if (left) Alignment.BottomStart else Alignment.BottomEnd)
+            )
         }
     }
 }
@@ -131,19 +147,20 @@ fun HomeFeed(vm: FlowViewModel, theme: FlowTheme, onSettings: () -> Unit) {
     val apps by vm.apps.collectAsState()
     val refreshing by vm.refreshing.collectAsState()
     val listenerOn by vm.listenerOn.collectAsState()
+    val layout by vm.layout.collectAsState()
     val byPkg = remember(apps) { apps.associateBy { it.pkg } }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+        columns = StaggeredGridCells.Fixed(if (layout == 0) 2 else 1),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = top + 8.dp, bottom = bottom + 130.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = top + 8.dp, bottom = bottom + 110.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalItemSpacing = 10.dp
     ) {
         item(key = "header", span = StaggeredGridItemSpan.FullLine) {
-            Header(theme, refreshing, { vm.refreshFeed() }, onSettings)
+            PhotoHeader(vm, theme, refreshing, onSettings)
         }
         if (!listenerOn) {
             item(key = "perm", span = StaggeredGridItemSpan.FullLine) {
@@ -190,10 +207,10 @@ fun HomeFeed(vm: FlowViewModel, theme: FlowTheme, onSettings: () -> Unit) {
             ) {
                 Column {
                     val image = item.image
-                    if (image != null) {
+                    if (image != null && layout != 2) {
                         AsyncImage(
                             model = image, contentDescription = null, contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 170.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = if (layout == 1) 240.dp else 170.dp)
                         )
                     }
                     Column(Modifier.padding(12.dp)) {
@@ -202,67 +219,13 @@ fun HomeFeed(vm: FlowViewModel, theme: FlowTheme, onSettings: () -> Unit) {
                         else ""
                         Text("${item.source} $age".trim(), color = theme.accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
-                        Text(item.title, color = theme.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                        if (item.summary.isNotBlank()) {
+                        Text(item.title, color = theme.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = if (layout == 2) 2 else 4, overflow = TextOverflow.Ellipsis)
+                        if (item.summary.isNotBlank() && layout != 2) {
                             Spacer(Modifier.height(4.dp))
                             Text(item.summary, color = theme.sub, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun Header(theme: FlowTheme, refreshing: Boolean, onRefresh: () -> Unit, onSettings: () -> Unit) {
-    val ctx = LocalContext.current
-    val now by produceState(System.currentTimeMillis()) {
-        while (true) { value = System.currentTimeMillis(); delay(30_000) }
-    }
-    val day = remember(now / 60_000) { SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(now)) }
-    val date = remember(now / 60_000) { SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(now)) }
-    val time = android.text.format.DateFormat.getTimeFormat(ctx).format(Date(now))
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), Arrangement.SpaceBetween, Alignment.Bottom) {
-        Column {
-            Text(day, color = theme.text, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-            Text("$date · $time", color = theme.sub, fontSize = 15.sp)
-        }
-        Row {
-            Text(if (refreshing) "…" else "↻", color = theme.text, fontSize = 22.sp, modifier = Modifier.clickable(onClick = onRefresh).padding(10.dp))
-            Text("⚙", color = theme.text, fontSize = 22.sp, modifier = Modifier.clickable(onClick = onSettings).padding(10.dp))
-        }
-    }
-}
-
-@Composable
-fun Dock(vm: FlowViewModel, theme: FlowTheme, onOpenSearch: () -> Unit, modifier: Modifier) {
-    val ctx = LocalContext.current
-    val apps by vm.apps.collectAsState()
-    val dockPkgs by vm.dock.collectAsState()
-    val dockApps = remember(apps, dockPkgs) { dockPkgs.mapNotNull { p -> apps.firstOrNull { it.pkg == p } } }
-    Surface(
-        modifier = modifier.fillMaxWidth().pointerInput(Unit) {
-            var total = 0f
-            detectVerticalDragGestures(
-                onDragStart = { total = 0f },
-                onDragEnd = { if (total < -40f) onOpenSearch() }
-            ) { _, d -> total += d }
-        },
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = theme.card, shadowElevation = 8.dp
-    ) {
-        Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
-                dockApps.forEach { a ->
-                    AppIcon(a, theme, false, true, { vm.toggleDock(a.pkg) }) { ctx.launchApp(a) }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Surface(
-                shape = RoundedCornerShape(50), color = theme.bg.copy(alpha = 1f),
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSearch)
-            ) {
-                Text("Search apps…", color = theme.sub, modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp))
             }
         }
     }
@@ -296,41 +259,6 @@ fun AppIcon(app: AppEntry, theme: FlowTheme, showLabel: Boolean, pinned: Boolean
 }
 
 @Composable
-fun SearchScreen(vm: FlowViewModel, theme: FlowTheme, onClose: () -> Unit) {
-    val ctx = LocalContext.current
-    val apps by vm.apps.collectAsState()
-    val dock by vm.dock.collectAsState()
-    var q by remember { mutableStateOf("") }
-    val results = remember(apps, q) {
-        if (q.isBlank()) apps
-        else apps.map { it to fuzzyScore(q, it.label) }.filter { it.second >= 0 }.sortedByDescending { it.second }.map { it.first }
-    }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
-    Column(Modifier.fillMaxSize().background(theme.bg.copy(alpha = 1f)).statusBarsPadding().imePadding().padding(12.dp)) {
-        TextField(
-            value = q, onValueChange = { q = it }, singleLine = true,
-            placeholder = { Text("Search apps") },
-            modifier = Modifier.fillMaxWidth().focusRequester(focus),
-            shape = RoundedCornerShape(50),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = theme.card, unfocusedContainerColor = theme.card,
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                focusedTextColor = theme.text, unfocusedTextColor = theme.text
-            ),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-            keyboardActions = KeyboardActions(onGo = { results.firstOrNull()?.let { ctx.launchApp(it); onClose() } })
-        )
-        Spacer(Modifier.height(8.dp))
-        LazyVerticalGrid(GridCells.Adaptive(76.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-            items(results, key = { it.component.flattenToString() }) { a ->
-                AppIcon(a, theme, true, a.pkg in dock, { vm.toggleDock(a.pkg) }) { ctx.launchApp(a); onClose() }
-            }
-        }
-    }
-}
-
-@Composable
 fun SettingsScreen(vm: FlowViewModel, theme: FlowTheme, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val feeds by vm.feeds.collectAsState()
@@ -357,6 +285,7 @@ fun SettingsScreen(vm: FlowViewModel, theme: FlowTheme, onClose: () -> Unit) {
                 }
             }
         }
+        FeedAndHomeSettings(vm, theme)
         Button(onClick = { ctx.open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Notification access") }
         OutlinedButton(onClick = { ctx.open(Intent(Settings.ACTION_HOME_SETTINGS)) }) { Text("Set as default home app") }
         Text("Feeds (RSS / Atom URLs)", color = theme.sub)

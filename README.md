@@ -3,10 +3,11 @@
 A 64-bit Android launcher inspired by FlowHome (Larva Labs): a scrolling feed instead of an icon grid, notifications on top, a thumb-reach dock and fast fuzzy app search. Kotlin + Jetpack Compose, no native code, so it builds for arm64-v8a and x86_64 by default.
 
 ## Features
-- Scrolling feed with the date/time header and your notifications at the top (grant Notification access once)
-- Dock with up to 5 apps; long-press any app to add/remove it, open app info, or uninstall
-- Fuzzy app search and drawer (tap the search pill or swipe up on the dock)
-- 4 themes
+- FlowHome-style home: round photo in the header with time and date on either side; notifications pinned at the top of the feed (grant Notification access once)
+- Feed layouts: mosaic, wide or narrow tiles
+- Corner tray (bottom-right, or bottom-left in left-handed mode): tap for your favourite apps, long-press to jump to search
+- Swipe left for the app drawer: a vertical list with search-as-you-type, hide apps, add to tray, app info, uninstall
+- 4 themes, custom header photo
 - Your own RSS / Atom feeds (Reddit, Mastodon, Tumblr, YouTube, blogs, news)
 
 Twitter, Instagram, Facebook and Feedly integrations from the original are not possible through public APIs anymore, which is why feeds are RSS/Atom.

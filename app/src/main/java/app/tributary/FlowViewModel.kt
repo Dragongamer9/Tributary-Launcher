@@ -19,6 +19,10 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
     val themeIndex = MutableStateFlow(prefs.theme)
     val listenerOn = MutableStateFlow(false)
     val homeTick = MutableStateFlow(0)
+    val layout = MutableStateFlow(prefs.layout)
+    val leftHanded = MutableStateFlow(prefs.leftHanded)
+    val hidden = MutableStateFlow(prefs.hidden)
+    val headerImage = MutableStateFlow(prefs.headerImage)
     private var lastFetch = 0L
 
     init {
@@ -76,5 +80,25 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
     fun setTheme(i: Int) {
         themeIndex.value = i
         prefs.theme = i
+    }
+
+    fun setLayout(i: Int) {
+        layout.value = i
+        prefs.layout = i
+    }
+
+    fun setLeftHanded(v: Boolean) {
+        leftHanded.value = v
+        prefs.leftHanded = v
+    }
+
+    fun toggleHidden(pkg: String) {
+        hidden.value = if (pkg in hidden.value) hidden.value - pkg else hidden.value + pkg
+        prefs.hidden = hidden.value
+    }
+
+    fun setHeaderImage(uri: String?) {
+        headerImage.value = uri
+        prefs.headerImage = uri
     }
 }

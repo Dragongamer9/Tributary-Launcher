@@ -42,6 +42,19 @@ class Prefs(ctx: Context) {
     var theme: Int
         get() = sp.getInt("theme", 0)
         set(v) { sp.edit().putInt("theme", v).apply() }
+    /** 0 = mosaic (2 columns), 1 = wide (1 column), 2 = narrow (compact rows) */
+    var layout: Int
+        get() = sp.getInt("layout", 0)
+        set(v) { sp.edit().putInt("layout", v).apply() }
+    var leftHanded: Boolean
+        get() = sp.getBoolean("leftHanded", false)
+        set(v) { sp.edit().putBoolean("leftHanded", v).apply() }
+    var hidden: Set<String>
+        get() = sp.getString("hidden", null)?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+        set(v) { sp.edit().putString("hidden", v.joinToString(",")).apply() }
+    var headerImage: String?
+        get() = sp.getString("headerImage", null)
+        set(v) { sp.edit().putString("headerImage", v).apply() }
 }
 
 class AppRepository(private val ctx: Context) {
